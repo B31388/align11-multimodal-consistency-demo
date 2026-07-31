@@ -1,0 +1,19 @@
+# config.yaml
+model:
+  # You will update this after uploading the model to Hugging Face
+  repo_id: "YOUR_USERNAME/tmcl-stage1-pretrained"
+  filename: "TMCL_Stage1_Pretrained.pt"
+  vision_model: "google/vit-base-patch16-224"
+  text_model: "bert-base-uncased"
+  projection_dim: 256
+  image_size: 224
+  max_length: 128
+  attn_implementation: "eager"
+
+inference:
+  default_threshold: 0.70
+  top_k_tokens: 12
+
+app:
+  title: "Proposed Model Demo – Multimodal Consistency Verification"
+  model_name: "Align11 (Frozen)"

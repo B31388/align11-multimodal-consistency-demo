@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Model weights & large files
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+checkpoints/
+weights/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Results & temporary
+results/
+figures/
+outputs/
+*.log
+*.csv
+!examples/**
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
