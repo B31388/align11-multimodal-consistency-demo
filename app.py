@@ -1,8 +1,8 @@
 # app.py
 # ==============================================================================
-# MULTIMODAL CONSISTENCY DECISION-SUPPORT DEMO
+# HUMAN-CENTERED MULTIMODAL CONSISTENCY DECISION-SUPPORT DEMO
 # TMCL / Align11 Framework
-# Final clean version
+# Stable version – explainability restored
 # ==============================================================================
 
 import streamlit as st
@@ -46,13 +46,13 @@ section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.12); }
 .assessment-card { border-radius: 12px; padding: 1.30rem 1.35rem; min-height: 145px; }
 .assessment-low { background: #f0fdf4; border: 1px solid #86efac; }
 .assessment-medium { background: #fffbeb; border: 1px solid #fcd34d; }
-.assessment-high { background: #fff7ed; border: 1px solid #fdba74; }
+.assessment-high { background: #fef2f2; border: 1px solid #fca5a5; }
 .assessment-title { font-size: 1.28rem; font-weight: 750; color: #172033; margin-top: 0.50rem; margin-bottom: 0.40rem; }
 .assessment-description { font-size: 0.94rem; line-height: 1.5; color: #475569; }
 .risk-badge { display: inline-block; padding: 0.28rem 0.65rem; border-radius: 999px; font-size: 0.75rem; font-weight: 750; }
 .risk-low { background: #dcfce7; color: #166534; }
 .risk-medium { background: #fef3c7; color: #92400e; }
-.risk-high { background: #ffedd5; color: #9a3412; }
+.risk-high { background: #fee2e2; color: #991b1b; }
 .human-control-note { background: #eff6ff; border-left: 4px solid #2563eb; padding: 0.85rem 1rem; border-radius: 7px; color: #1e3a8a; font-size: 0.90rem; line-height: 1.5; }
 </style>
 """, unsafe_allow_html=True)
@@ -96,37 +96,42 @@ def load_resources():
 
 
 def create_attention_overlay(image_pil, vit_map):
-    if vit_map is None:
+    if vit_map is None or image_pil is None:
         return image_pil
     try:
-        vit_map = np.asarray(vit_map)
-        vit_min, vit_max = np.min(vit_map), np.max(vit_map)
+        vit_map = np.asarray(vit_map, dtype=np.float32)
+        vit_min, vit_max = float(np.min(vit_map)), float(np.max(vit_map))
         if vit_max > vit_min:
             vit_map = (vit_map - vit_min) / (vit_max - vit_min)
+        else:
+            vit_map = np.zeros_like(vit_map)
+
         att_img = Image.fromarray((vit_map * 255).astype(np.uint8)).resize(
             image_pil.size, resample=Image.BILINEAR
         )
-        att_np = np.array(att_img) / 255.0
+        att_np = np.array(att_img).astype(np.float32) / 255.0
+
         fig, ax = plt.subplots(figsize=(5.5, 5.5))
-        ax.imshow(image_pil)
-        ax.imshow(att_np, cmap="jet", alpha=0.46)
+        ax.imshow(np.array(image_pil))
+        ax.imshow(att_np, cmap="jet", alpha=0.45)
         ax.axis("off")
         fig.tight_layout(pad=0)
+
         buf = BytesIO()
-        fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0, dpi=130)
+        fig.savefig(buf, format="png", bbox_inches="tight", pad_inches=0.02, dpi=120)
+        plt.close(fig)
         buf.seek(0)
         overlay = Image.open(buf).convert("RGB")
-        plt.close(fig)
         return overlay
     except Exception as e:
-        st.error(f"Error creating attention overlay: {e}")
+        st.warning(f"Attention overlay issue: {e}")
         return image_pil
 
 
 def get_assessment(similarity):
     if similarity >= LOW_RISK_THRESHOLD:
         return {
-            "label": "No significant mismatch detected", "risk": "Low", "icon": "✓",
+            "label": "Significant match detected", "risk": "Low", "icon": "✓",
             "css": "assessment-low", "badge": "risk-low",
             "message": "The model found substantial alignment between the image and the submitted description.",
             "action": "Review the evidence and confirm whether the description adequately represents the image.",
@@ -183,10 +188,10 @@ No significant mismatch
 🟡 **Medium** (0.40 – 0.69)  
 Needs review
 
-🟠 **High** (0.00 – 0.39)  
+🔴 **High** (0.00 – 0.39)  
 Potential mismatch""")
     st.markdown("---")
-    st.caption("© 2026 Mugimba Kakure Jude")
+    st.caption("© 2026 Mugimba Kakure Jude / Align11")
 
 
 model, tokenizer, transform, device, model_status = load_resources()
@@ -287,15 +292,19 @@ if page in ["New Analysis", "Dashboard"]:
                 st.caption("Higher scores indicate stronger image–description alignment.")
         with risk_col:
             st.markdown("#### Risk Level")
-            if assessment["risk"] == "Low": st.success("LOW\n\nNo significant mismatch")
-            elif assessment["risk"] == "Medium": st.warning("MEDIUM\n\nNeeds Review")
-            else: st.warning("HIGH\n\nPotential Mismatch")
+            if assessment["risk"] == "Low":
+                st.success("LOW\n\nNo significant mismatch")
+            elif assessment["risk"] == "Medium":
+                st.warning("MEDIUM\n\nNeeds Review")
+            else:
+                st.error("HIGH\n\nPotential Mismatch")
             st.caption(assessment["action"])
         with meaning_col:
             st.markdown("#### What does this mean?")
             st.write(assessment["message"])
             st.info("Review the evidence below before making your own assessment.")
 
+        # ===================== EVIDENCE SECTION (stable) =====================
         st.markdown("")
         st.markdown('<div class="section-eyebrow">Evidence Used by the Model</div>', unsafe_allow_html=True)
         exp1, exp2, exp3 = st.columns(3, gap="large")
@@ -303,58 +312,64 @@ if page in ["New Analysis", "Dashboard"]:
         with exp1:
             st.markdown("#### 👁 Image Evidence")
             st.caption("Highlighted regions contributed most strongly to the model assessment.")
-            if res.get("vit_attention_map") is not None:
-                try:
+            try:
+                if res.get("vit_attention_map") is not None and res.get("image_pil") is not None:
                     overlay = create_attention_overlay(res["image_pil"], res["vit_attention_map"])
                     st.image(overlay, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Could not render attention map: {e}")
+                elif res.get("image_pil") is not None:
                     st.image(res["image_pil"], use_container_width=True)
-            else:
-                st.image(res["image_pil"], use_container_width=True)
-                st.caption("Visual attention evidence is unavailable.")
+                    st.caption("Attention map not available for this analysis.")
+            except Exception as e:
+                st.error(f"Image evidence error: {e}")
+                if res.get("image_pil") is not None:
+                    st.image(res["image_pil"], use_container_width=True)
 
         with exp2:
             st.markdown("#### 📊 Description Evidence")
             st.caption("Terms that contributed most strongly to the model comparison.")
-            tokens = res.get("top_tokens", []) or []
-            scores = res.get("top_scores", []) or []
-            if tokens and len(scores) > 0:
-                try:
+            try:
+                tokens = res.get("top_tokens") or []
+                scores = res.get("top_scores") or []
+                if tokens and scores and len(tokens) > 0 and len(scores) > 0:
                     tokens_to_plot = tokens[:10]
                     scores_to_plot = np.asarray(scores[:10], dtype=float)
                     fig, ax = plt.subplots(figsize=(5.0, 4.0))
-                    colours = sns.color_palette("Blues", n_colors=len(tokens_to_plot))
+                    colours = sns.color_palette("Reds", n_colors=len(tokens_to_plot))
                     ax.barh(range(len(tokens_to_plot)), scores_to_plot[::-1], color=colours[::-1])
                     ax.set_yticks(range(len(tokens_to_plot)))
                     ax.set_yticklabels(tokens_to_plot[::-1], fontsize=9)
                     ax.set_xlabel("Relative Importance", fontsize=9)
-                    max_score = float(np.max(scores_to_plot)) if len(scores_to_plot) else 1.0
-                    if max_score > 0: ax.set_xlim(0, max_score * 1.18)
+                    max_score = float(np.max(scores_to_plot)) if len(scores_to_plot) > 0 else 1.0
+                    if max_score > 0:
+                        ax.set_xlim(0, max_score * 1.18)
                     ax.spines[["top", "right"]].set_visible(False)
                     fig.tight_layout()
                     st.pyplot(fig, use_container_width=True)
                     plt.close(fig)
-                except Exception as e:
-                    st.error(f"Could not render token chart: {e}")
-            else:
-                st.info("No textual evidence scores available.")
+                else:
+                    st.info("No textual evidence scores available.")
+            except Exception as e:
+                st.error(f"Token chart error: {e}")
 
         with exp3:
             st.markdown("#### 💡 Assessment Summary")
             top_terms = safe_top_terms(res, n=4)
             if assessment["risk"] == "Low":
                 st.success("The model found substantial alignment between the image and description.")
-                if top_terms: st.write("**Influential terms:** " + ", ".join(top_terms))
+                if top_terms:
+                    st.write("**Influential terms:** " + ", ".join(top_terms))
                 st.info("This result does not independently establish that the description is correct. Human review remains appropriate.")
             elif assessment["risk"] == "Medium":
                 st.warning("The model found partial agreement, but the result lies in the review range.")
-                if top_terms: st.write("**Influential terms:** " + ", ".join(top_terms))
+                if top_terms:
+                    st.write("**Influential terms:** " + ", ".join(top_terms))
                 st.info("Examine the highlighted regions and terms before deciding.")
             else:
-                st.warning("The model identified substantial image–description inconsistency.")
-                if top_terms: st.write("**Influential terms:** " + ", ".join(top_terms))
+                st.error("The model identified substantial image–description inconsistency.")
+                if top_terms:
+                    st.write("**Influential terms:** " + ", ".join(top_terms))
                 st.info("Treat this as a review signal rather than an automated final decision.")
+        # ===================================================================
 
         st.markdown("---")
         st.markdown('<div class="section-eyebrow">Your Review & Decision</div>', unsafe_allow_html=True)
@@ -465,4 +480,6 @@ Image + Description → Model Assessment → Evidence → Human Review → Human
 
 The model provides decision-support evidence only.  
 Final authority remains with the human reviewer.
+
+© 2026 Mugimba Kakure Jude / Align11
 """)
